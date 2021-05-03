@@ -6,6 +6,7 @@ import (
 
 	"github.com/abonec/tcp_chat/chat"
 	"github.com/abonec/tcp_chat/marshal"
+	netclose "github.com/abonec/tcp_chat/net_closed"
 	"github.com/abonec/tcp_chat/protocol"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -29,13 +30,16 @@ func NewServer(addr string, chat *chat.Chat) (*Server, error) {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	defer closeListener(s.listener)
+	defer netclose.CloseListener(s.listener)
 	go func() {
 		<-ctx.Done()
-		closeListener(s.listener)
+		netclose.CloseListener(s.listener)
 	}()
 	for {
 		conn, err := s.listener.Accept()
+		if netclose.CheckClosedError(err) {
+			return nil
+		}
 		if err != nil {
 			return errors.Wrap(err, "accept new tcp connection")
 		}
@@ -49,11 +53,11 @@ func (s *Server) Addr() string {
 
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer func() {
-		closeConnection(conn)
+		netclose.CloseConnection(conn)
 	}()
 	go func() {
 		<-ctx.Done()
-		closeConnection(conn)
+		netclose.CloseConnection(conn)
 	}()
 	usernameMessage, err := protocol.ReadMessage(conn)
 	if err != nil {
@@ -69,6 +73,9 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	g.Go(func() error {
 		for {
 			protoMessage, err := protocol.ReadMessage(conn)
+			if netclose.CheckClosedError(err) {
+				return nil
+			}
 			if err != nil {
 				return errors.Wrap(err, "read proto message from client")
 			}
@@ -105,18 +112,4 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 
 func reportErr(err error) {
 	log.Err(err).Msg("got error")
-}
-
-func closeConnection(conn net.Conn) {
-	err := conn.Close()
-	if err != nil {
-		log.Err(err).Msg("failed to close connection")
-	}
-}
-
-func closeListener(l net.Listener) {
-	err := l.Close()
-	if err != nil {
-		log.Err(err).Msg("failed to close tcp listener")
-	}
 }

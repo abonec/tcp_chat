@@ -2,6 +2,7 @@ package client_server
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,21 +19,26 @@ func TestClientServer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	addr, stopServer := startServer(ctx, t)
 	defer stopServer()
-	client1, done1 := connectClient(ctx, t, addr, "first")
-	client2, done2 := connectClient(ctx, t, addr, "second")
-	client3, done3 := connectClient(ctx, t, addr, "third")
-	broadcastMessage := chat.Message{Message: "broadcast message"}
-	sendMessage(ctx, client1, broadcastMessage)
-	expectMessage(ctx, t, broadcastMessage, client2, client3)
+	clients, dones := connectClients(ctx, t, addr, 10)
 
-	privateMessage := chat.Message{User: "second", Message: "private message"}
-	sendMessage(ctx, client2, privateMessage)
-	expectMessage(ctx, t, privateMessage, client2)
+	// test privates first to 10 clients
+	privateMessage := chat.Message{User: clients[1].Username(), Message: "private message"}
+	sendMessage(ctx, clients[0], privateMessage)
+	expectMessage(ctx, t, privateMessage, clients[1])
+
+	// test broadcast message
+	broadcastMessage := chat.Message{Message: "broadcast message"}
+	sendMessage(ctx, clients[0], broadcastMessage)
+	expectMessage(ctx, t, broadcastMessage, clients[1:]...)
 
 	cancel()
-	<-done1
-	<-done2
-	<-done3
+	waitClients(dones)
+}
+
+func waitClients(dones []chan struct{}) {
+	for _, done := range dones {
+		<-done
+	}
 }
 
 func expectMessage(ctx context.Context, t *testing.T, expectMessage chat.Message, clients ...*client.Client) {
@@ -58,6 +64,18 @@ func sendMessage(ctx context.Context, cli *client.Client, message chat.Message) 
 	go cli.SendMessage(ctx, message)
 }
 
+func connectClients(ctx context.Context, t *testing.T, addr string, clientsNum int) ([]*client.Client, []chan struct{}) {
+	clients := make([]*client.Client, clientsNum)
+	dones := make([]chan struct{}, clientsNum)
+
+	for i := 0; i < clientsNum; i++ {
+		cli, done := connectClient(ctx, t, addr, fmt.Sprintf("client_%d", i))
+		clients[i] = cli
+		dones[i] = done
+	}
+
+	return clients, dones
+}
 func connectClient(ctx context.Context, t *testing.T, addr string, userName string) (*client.Client, chan struct{}) {
 	t.Helper()
 	cli, err := client.NewClient(addr, userName)

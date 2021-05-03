@@ -2,11 +2,11 @@ package client
 
 import (
 	"context"
-	"io"
 	"net"
 
 	"github.com/abonec/tcp_chat/chat"
 	"github.com/abonec/tcp_chat/marshal"
+	netclose "github.com/abonec/tcp_chat/net_closed"
 	"github.com/abonec/tcp_chat/protocol"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
@@ -27,7 +27,7 @@ func NewClient(addr string, username string) (*Client, error) {
 		return nil, errors.Wrap(err, "dial tcp connection")
 	}
 	err = registration(conn, username)
-	if checkClosed(err) {
+	if netclose.CheckClosedError(err) {
 		return nil, errors.Wrap(err, "client connection was unexpectedly closed")
 	}
 	if err != nil {
@@ -66,7 +66,7 @@ func (c *Client) Start(ctx context.Context) error {
 	g.Go(func() error {
 		for {
 			protoMessage, err := protocol.ReadMessage(c.conn)
-			if checkClosed(err) {
+			if netclose.CheckClosedError(err) {
 				return nil
 			}
 			if err != nil {
@@ -94,20 +94,13 @@ func (c *Client) Start(ctx context.Context) error {
 				if err != nil {
 					return errors.Wrap(err, "write proto message to the wire")
 				}
-				if checkClosed(err) {
+				if netclose.CheckClosedError(err) {
 					return errors.Wrap(err, "connection was unexpectedly closed")
 				}
 			}
 		}
 	})
 	return errors.WithStack(g.Wait())
-}
-
-func checkClosed(err error) bool {
-	if errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF) {
-		return true
-	}
-	return false
 }
 
 func registration(conn net.Conn, username string) error {
