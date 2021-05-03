@@ -5,8 +5,11 @@ import (
 	"net"
 
 	"github.com/abonec/tcp_chat/chat"
+	"github.com/abonec/tcp_chat/marshal"
+	"github.com/abonec/tcp_chat/protocol"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/sync/errgroup"
 )
 
 type Server struct {
@@ -48,13 +51,51 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		<-ctx.Done()
 		closeConnection(conn)
 	}()
-	// var buf []byte
-	// msg, err := protocol.ReadMessage(conn, buf)
-	// if err != nil {
-	// 	reportErr(err)
-	// }
-	// for {
-	// }
+	var buf []byte
+	usernameMessage, err := protocol.ReadMessage(conn, buf)
+	if err != nil {
+		reportErr(err)
+	}
+	username := string(usernameMessage)
+	messages := s.chat.Join(username)
+	defer func() {
+		s.chat.Leave(username)
+	}()
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		for {
+			protoMessage, err := protocol.ReadMessage(conn, buf)
+			if err != nil {
+				return errors.Wrap(err, "read proto message from client")
+			}
+			msg, err := marshal.Unmarshal(protoMessage)
+			if err != nil {
+				return errors.Wrap(err, "unmarshal message from client")
+			}
+			msg.From = username
+			err = s.chat.SendMessage(ctx, msg)
+			if err != nil {
+				return errors.Wrap(err, "send message to the chat")
+			}
+		}
+	})
+	g.Go(func() error {
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case msg := <-messages:
+				_, err := conn.Write(marshal.Marshal(msg))
+				if err != nil {
+					return errors.Wrap(err, "writing message to client")
+				}
+			}
+		}
+	})
+	err = g.Wait()
+	if err != nil {
+		reportErr(err)
+	}
 }
 
 func reportErr(err error) {
