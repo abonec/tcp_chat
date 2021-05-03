@@ -13,34 +13,38 @@ import (
 )
 
 type Server struct {
-	addr string
-	chat *chat.Chat
+	chat     *chat.Chat
+	listener net.Listener
 }
 
-func NewServer(addr string, chat *chat.Chat) *Server {
-	return &Server{
-		addr: addr,
-		chat: chat,
+func NewServer(addr string, chat *chat.Chat) (*Server, error) {
+	l, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, errors.Wrap(err, "listen for the server")
 	}
+	return &Server{
+		listener: l,
+		chat:     chat,
+	}, nil
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	l, err := net.Listen("tcp", s.addr)
-	if err != nil {
-		return errors.Wrap(err, "listen for the server")
-	}
-	defer closeListener(l)
+	defer closeListener(s.listener)
 	go func() {
 		<-ctx.Done()
-		closeListener(l)
+		closeListener(s.listener)
 	}()
 	for {
-		conn, err := l.Accept()
+		conn, err := s.listener.Accept()
 		if err != nil {
 			return errors.Wrap(err, "accept new tcp connection")
 		}
 		go s.handleConnection(ctx, conn)
 	}
+}
+
+func (s *Server) Addr() string {
+	return s.listener.Addr().String()
 }
 
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
@@ -62,6 +66,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		s.chat.Leave(username)
 	}()
 	g, ctx := errgroup.WithContext(ctx)
+	// handle incoming messages
 	g.Go(func() error {
 		for {
 			protoMessage, err := protocol.ReadMessage(conn, buf)
@@ -79,13 +84,14 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 			}
 		}
 	})
+	// handle outgoing messages
 	g.Go(func() error {
 		for {
 			select {
 			case <-ctx.Done():
 				return nil
 			case msg := <-messages:
-				_, err := conn.Write(marshal.Marshal(msg))
+				err := protocol.WriteMessage(conn, marshal.Marshal(msg))
 				if err != nil {
 					return errors.Wrap(err, "writing message to client")
 				}
@@ -99,7 +105,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 }
 
 func reportErr(err error) {
-	log.Err(err).Msg("go error")
+	log.Err(err).Msg("got error")
 }
 
 func closeConnection(conn net.Conn) {
