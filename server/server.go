@@ -55,8 +55,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		<-ctx.Done()
 		closeConnection(conn)
 	}()
-	var buf []byte
-	usernameMessage, err := protocol.ReadMessage(conn, buf)
+	usernameMessage, err := protocol.ReadMessage(conn)
 	if err != nil {
 		reportErr(err)
 	}
@@ -69,7 +68,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	// handle incoming messages
 	g.Go(func() error {
 		for {
-			protoMessage, err := protocol.ReadMessage(conn, buf)
+			protoMessage, err := protocol.ReadMessage(conn)
 			if err != nil {
 				return errors.Wrap(err, "read proto message from client")
 			}

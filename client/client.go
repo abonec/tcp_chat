@@ -64,9 +64,8 @@ func (c *Client) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 	// listen incoming messages
 	g.Go(func() error {
-		var buf []byte
 		for {
-			protoMessage, err := protocol.ReadMessage(c.conn, buf)
+			protoMessage, err := protocol.ReadMessage(c.conn)
 			if checkClosed(err) {
 				return nil
 			}

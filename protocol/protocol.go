@@ -17,8 +17,8 @@ var (
 	ErrWrongNumberOfBytesWasWritten = errors.New("wrong number of bytes was written to the wire")
 )
 
-func ReadMessage(r io.Reader, buf []byte) ([]byte, error) {
-	buf = resizeBuffer(buf, lengthPartSize)
+func ReadMessage(r io.Reader) ([]byte, error) {
+	buf := make([]byte, lengthPartSize)
 	_, err := io.ReadFull(r, buf)
 	if err != nil {
 		return nil, errors.Wrap(err, "read length part")

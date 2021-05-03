@@ -16,10 +16,10 @@ func TestReadWriteMessage(t *testing.T) {
 	err := WriteMessage(conn, message)
 	require.NoError(t, err)
 
-	readMessage, err := ReadMessage(conn, nil)
+	readMessage, err := ReadMessage(conn)
 	require.NoError(t, err)
 	assert.Equal(t, message, readMessage)
 
-	_, err = ReadMessage(conn, nil)
+	_, err = ReadMessage(conn)
 	assert.ErrorIs(t, err, io.EOF)
 }

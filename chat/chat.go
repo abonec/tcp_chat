@@ -59,7 +59,7 @@ func (c *Chat) sendPrivate(ctx context.Context, msg Message) error {
 	return nil
 }
 
-// FIXME: this approach not scalable and will block for slow users
+// FIXME: this approach not scalable and will block for slow and stale users
 func (c *Chat) sendBroadcast(ctx context.Context, msg Message) {
 	c.usersMu.RLock()
 	defer c.usersMu.RUnlock()
